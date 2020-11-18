@@ -3,9 +3,6 @@ import torch.nn as nn
 import numpy as np 
 from torch.autograd import Variable
 
-
-
-
 class BNNLayer(nn.Module):
 
     def __init__(self,
@@ -115,18 +112,17 @@ class BNNLayer(nn.Module):
 
 
 class BNN(nn.Module):
-    def __init__(self, n_input,
-                 n_hidden,
-                 n_output,
+    def __init__(self, args,
+                 n_hidden = 512,
                  n_batches=5,
                  std_prior=0.5,
                  std_likelihood=5.0,
                  n_samples=10,
-                 learning_rate=0.0001):
+                 learning_rate=0.001):
         super(BNN, self).__init__()
 
-        self.n_input = n_input
-        self.n_output = n_output
+        self.n_input = args.input_shape
+        self.n_output = args.observation_shape
         self.std_prior = std_prior
 
         self.std_prior = std_prior
@@ -135,8 +131,8 @@ class BNN(nn.Module):
         self.learning_rate = learning_rate
         self.n_batches = n_batches
 
-        self.l1 = BNNLayer(n_input, n_hidden, std_prior)
-        self.l2 = BNNLayer(n_hidden, n_output, std_prior)
+        self.l1 = BNNLayer(self.n_input, n_hidden, std_prior)
+        self.l2 = BNNLayer(n_hidden, self.n_output, std_prior)
         self.layers = [self.l1, self.l2]
 
         self.opt = torch.optim.Adam(self.parameters(), lr=self.learning_rate)
@@ -160,6 +156,7 @@ class BNN(nn.Module):
     def loss_last_sample(self, input, targe
         inputs = torch.from_numpy(inputst):
         _log_p_D_given_w = []
+        
         for _ in range(self.n_samples):
             prediction = self(input)
             _log_p_D_given_w.append(self._log_prob_normal(
