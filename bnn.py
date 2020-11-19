@@ -122,7 +122,7 @@ class BNN(nn.Module):
         super(BNN, self).__init__()
 
         self.n_input = args.input_shape
-        self.n_output = args.observation_shape
+        self.n_output = args.observation_shape + 1
         self.std_prior = std_prior
 
         self.std_prior = std_prior
@@ -153,10 +153,8 @@ class BNN(nn.Module):
         kl = self.kl_div_new_prior()
         return kl / self.n_batches - sum(_log_p_D_given_W) / self.n_samples
 
-    def loss_last_sample(self, input, targe
-        inputs = torch.from_numpy(inputst):
+    def loss_last_sample(self, input, target):
         _log_p_D_given_w = []
-        
         for _ in range(self.n_samples):
             prediction = self(input)
             _log_p_D_given_w.append(self._log_prob_normal(
@@ -164,8 +162,10 @@ class BNN(nn.Module):
 
         return self.kl_div_new_old() - sum(_log_p_D_given_w) / self.n_samples
 
-    def train_fn(self, inputs, targets):).float()
-        targets = torch.from_numpy(targets).float()
+    def train_fn(self, inputs, targets):
+        if not isinstance(inputs, torch.Tensor):
+            inputs = torch.FloatTensor(inputs)
+            targets = torch.FloatTensor(targets)
 
         self.opt.zero_grad()
         loss = self.loss(inputs, targets)
@@ -185,11 +185,19 @@ class BNN(nn.Module):
 
         return loss.item()
 
-    def pred_fn(self, inputs):
-        inputs = torch.from_numpy(inputs).float()
+    def pred_fn(self, inputs, get_loss = False):
+        if not isinstance(inputs, torch.Tensor):
+            inputs = torch.from_numpy(inputs).float()
+
         with torch.no_grad():
             _out = self(inputs, infer=True)
+            if get_loss:
+                loss = self.loss(inputs, _out)
+
+                return _out, loss.item()
+
         return _out
+        #return _out, loss.item() if get_loss else _out
 
     def kl_div_new_old(self):
         """KL divergence KL[new_parans||old_param]"""

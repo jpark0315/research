@@ -1,7 +1,7 @@
 
 import random
 import numpy as np
-
+from collections import OrderedDict
 
 class RunningMeanStd(object):
     # https://en.wikipedia.org/wiki/Algorithms_for_calculating_variance#Parallel_algorithm
@@ -47,3 +47,30 @@ class Logger:
 
         else:
             self.dict[name].append(data)
+
+    def plot(self):
+
+        import matplotlib.pyplot as plt
+        import torch 
+        for k,v in self.dict.items():
+            if not isinstance(v[0], torch.Tensor):
+                plt.figure()
+                if k == 'Dones' or k == "pred_values reward" or k == "real reward":
+                    print('MEAN/VAR', np.asarray(v).mean(), np.asarray(v).std())
+                plt.title(k)
+                plt.plot(v)
+                
+                plt.show()
+                
+                  
+            else:
+                data = torch.stack(v)
+                if len(data) == 1:
+                    plt.figure()
+                    plt.title(k)
+                    plt.plot(data.mean(1))
+                else:
+                    plt.figure()
+                    plt.title(k)
+                    plt.plot(data)
+                
