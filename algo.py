@@ -7,22 +7,16 @@ import random
 import numpy as np 
 
 from bnn import BNN 
+from non_bnn import Ensemble
 from replay import ReplayBuffer
 
 
 class MBPO:
 
-    def __init__(self, args, agent, env, ensemble = True):
+    def __init__(self, args, agent, env):
 
-        if not ensemble:
-            self.model = BNN(args).to(args.device)
-            #self.model_optim = torch.optim.Adam(self.model.parameters(), lr = args.model_lr)
 
-        else:
-            self.models = [BNN(args).to(args.device) for _ in range(args.ensemble_size)]
-            #self.model_optims = [torch.optim.Adam(m.parameters(), lr = args.model_lr) for m in self.models]
-
-        self.ensemble = ensemble
+        self.models = Ensemble(args)
         self.args = args
         self.MLE  = nn.MSELoss()
         self.D_env = ReplayBuffer(args.D_env_size, args.seed, args, true_buffer = True)
@@ -61,6 +55,7 @@ class MBPO:
         and perform model_rollout_step from that state
         and add data to D_model
         """
+        prev_length = np.copy(len(self.D_model))
         simul_reward = 0
         masks = 0
         print('Collecting simulated rollouts...')
@@ -69,28 +64,32 @@ class MBPO:
 
             for _ in range(self.args.model_rollout_step):
 
-                if self.ensemble:
-                    model = random.choice(self.models)
-                else:
-                    model = self.model
+                action, log_prob = self.agent.select_action(state)
 
-                action, _ = self.agent.select_action(state)
+                # ensemble_mean, ensemble_logvar = self.models.predict(state, action)    #This is actually not logvar
+                # assert len(ensemble_mean) == self.args.ensemble_size
+                # cur_model_index = np.random.randint(self.args.ensemble_size)
+                # cur_mean, cur_logvar = ensemble_mean[cur_model_index], ensemble_logvar[cur_model_index]
 
-                #output = model(state, action).detach().squeeze(0).cpu().numpy()
-                input = torch.cat((torch.FloatTensor(state).unsqueeze(0), 
-                        torch.FloatTensor(action).unsqueeze(0)), dim =1)
-                output = model.pred_fn(input).detach().squeeze(0).cpu().numpy()
-                next_state , reward = output[:-1], output[-1]
-                mask = float(not self.termination_fn(next_state))
+                cur_mean, cur_logvar = self.models.predict(state, action, one_model = True)
+                output = cur_mean + np.random.normal(size = cur_mean.shape) * np.sqrt(cur_logvar)
+                assert len(output.shape) == 2
+                output = output.reshape(-1)
+
+                next_state , reward = output[:-1] + state, output[-1]
+                done = self.termination_fn(next_state)
+                mask = float(not done)
+
                 self.D_model.push(state, action, reward, next_state, mask)
-
                 state = next_state
                 simul_reward += reward
                 masks += mask
-
+                if done:
+                    break 
+                logger.log('Simul Log Prob', log_prob)
+    
         logger.log('avg_simulated reward', simul_reward/(self.args.num_model_rollouts * self.args.model_rollout_step))
         logger.log('Dones', masks/(self.args.num_model_rollouts * self.args.model_rollout_step))
-
 
     def update_policy(self, logger):
 
@@ -113,76 +112,40 @@ class MBPO:
         Called start of every episode when len(D_env) > model_batch_size
         """
         #Sample real data from D_env
-        if self.ensemble:
-            for model in self.models:
-                for _ in range(self.args.model_train_step):
-                    self.train_model_fn(model, logger)
+      
+        for _ in range(self.args.model_train_step):
+            (state_batch, action_batch, reward_batch, 
+                next_state_batch, _) = self.D_env.sample(self.args.model_batch_size)
+            delta_state = next_state_batch - state_batch 
 
-        else:
-            for _ in range(self.args.model_train_step):
-                self.train_model_fn(self.model,self.model_optim, logger)
+            state_batch = torch.FloatTensor(state_batch).to(self.args.device)
+            action_batch = torch.FloatTensor(action_batch).to(self.args.device)
+            delta_state = torch.FloatTensor(delta_state).to(self.args.device)
+            reward_batch = torch.FloatTensor(reward_batch).unsqueeze(1)
 
-    def train_model_fn(self, model, logger):
+            assert len(state_batch) == len(delta_state) & len(reward_batch) == len(delta_state)
+            labels = torch.cat((delta_state, reward_batch), 1).to(self.args.device)
 
-        state_batch, action_batch, reward_batch, next_state_batch, _ = self.D_env.sample(self.args.model_batch_size)
-
-        state_batch = torch.FloatTensor(state_batch)
-        next_state_batch = torch.FloatTensor(next_state_batch)
-        action_batch = torch.FloatTensor(action_batch)
-        reward_batch = torch.FloatTensor(reward_batch).unsqueeze(1)
-
-        assert len(state_batch) == len(next_state_batch)
-
-        inputs = torch.cat((state_batch, action_batch), dim = 1).to(self.args.device)
-        targets = torch.cat((next_state_batch, reward_batch), dim= 1).to(self.args.device)
-        loss = model.train_fn(inputs, targets)
-        pred= model.pred_fn(inputs)
-        mse_loss = self.MLE(pred, targets)
-
-        print('Model Loss', loss)
-        logger.log("Model Loss", loss)
-        logger.log("Model MSELoss", mse_loss)
-        logger.log( "pred_values", pred.detach().cpu().mean().item())
-        logger.log("real ns", targets.mean().cpu())
-        logger.log("pred_values std", pred.detach().cpu().std())
-        logger.log("real ns std", targets.std().cpu())
-        logger.log("pred_values reward", pred.detach().cpu()[:,-1].mean())
-        logger.log("real reward", targets.cpu()[:,-1].mean())
+            self.models.fit(state_batch, action_batch, labels, logger)
 
 
     def eval_model(self, logger):
         """
         Evaluate Model on freshly arrived real samples
         """
-        if self.ensemble:
-            for model in self.models:
-                self.eval_model_fn(model, logger)
+        (state_batch, action_batch, reward_batch, 
+                next_state_batch, _) = self.D_env.sample(self.args.model_batch_size, train = False)
+        delta_state = next_state_batch - state_batch 
 
-        else:
-            self.eval_model_fn(self.model, logger)
-
-    def eval_model_fn(self, model, logger):
-
-        (state_batch, action_batch,
-        reward_batch, next_state_batch, _)  = self.D_env.sample(self.args.E_steps, train = False)
-
-        state_batch = torch.FloatTensor(state_batch)
-        next_state_batch = torch.FloatTensor(next_state_batch)
-        action_batch = torch.FloatTensor(action_batch)
+        state_batch = torch.FloatTensor(state_batch).to(self.args.device)
+        action_batch = torch.FloatTensor(action_batch).to(self.args.device)
+        delta_state = torch.FloatTensor(delta_state).to(self.args.device)
         reward_batch = torch.FloatTensor(reward_batch).unsqueeze(1)
-        inputs = torch.cat((state_batch, action_batch), dim = 1).to(self.args.device)
 
-        with torch.no_grad():
-            pred, bnn_loss = model.pred_fn(inputs, get_loss = True)
-            truth = torch.cat((next_state_batch, reward_batch), 1).to(self.args.device)
-            loss = self.MLE(pred, truth)
+        assert len(state_batch) == len(delta_state) & len(delta_state) == len(reward_batch)
+        labels = torch.cat((delta_state, reward_batch), 1).to(self.args.device)
+        self.models.eval(state_batch, action_batch, labels, logger)
 
-        print("Eval BNN loss", bnn_loss)
-        print("Eval MSE loss", loss.detach().item())
-        logger.log("Eval BNN loss", bnn_loss)
-        logger.log("Eval MSE Loss", loss.detach().item())
-        logger.log("eval pred_values reward", pred.detach()[:,-1].mean().item())
-        logger.log("eval real reward", truth[:,-1].mean().item())
 
     def one_step(self, state, logger):
         """
