@@ -96,9 +96,16 @@ class MBPO:
         if len(self.D_model) > self.args.batch_size:
             print('Updating Policy...')
             self.updates += 1
-            for _ in (range(self.args.policy_update_per_step)):
-                (critic_1_loss, critic_2_loss,
-                policy_loss, qf1, target_q) = self.agent.update_parameters(self.D_model,
+            for i in (range(self.args.policy_update_per_step)):
+                if i % 10 != 0:
+                
+                    (critic_1_loss, critic_2_loss,
+                    policy_loss, qf1, target_q) = self.agent.update_parameters(self.D_model,
+                                                        self.args.batch_size, self.updates)
+
+                else:
+                    (critic_1_loss, critic_2_loss,
+                    policy_loss, qf1, target_q) = self.agent.update_parameters(self.D_env,
                                                         self.args.batch_size, self.updates)
 
                 logger.log('c1loss', critic_1_loss)
