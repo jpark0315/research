@@ -1,0 +1,262 @@
+//
+//  SimpleSet.h
+//  hw7
+//
+//  Created by cistudent on 2020/11/18.
+//  Copyright © 2020 cs. All rights reserved.
+//
+
+#include <vector>
+#include <iostream>
+#ifndef SimpleSet_h
+#define SimpleSet_h
+
+
+namespace pic10c{
+
+template<typename T>
+class simple_set{
+private:
+    std::vector<T> data;
+public:
+    simple_set(){};
+    void insert(T value);
+    void erase(T value);
+    bool find(T value);
+    int size();
+    
+    
+    
+
+};
+/*
+ Description of function
+ Insert value to vector data
+ @tparam T value: value to be inserted
+ */
+template<typename T>
+void simple_set<T>::insert(T value){
+    if (!find(value)){
+    //append value to data if we haven't found the data
+    data.push_back(value);
+    }
+    
+}
+/*
+ Description of function
+ Finds whether we stored the data or not
+ @tparam T value: value to be found in the data vector
+ return: bool whether we have stored the variable or not
+ */
+template<typename T>
+bool simple_set<T>::find(T value){
+    auto it = std::find(data.begin(), data.end(), value);
+    //if haven't found, return true
+    if (it != data.end()){
+        return true;
+    }
+    //else if have found, return false
+    return false;
+}
+
+/*
+ Description of function
+ This function erases the provided value from the data vector
+ tparam T value: value to erase from data vector
+ */
+template<typename T>
+void simple_set<T>::erase(T value){
+    
+    auto it = std::find(data.begin(), data.end(), value);
+    data.erase(it);
+}
+
+/*
+ Description of function
+ This function determines the size of the set
+ return: size of set
+ */
+template<typename T>
+int simple_set<T>::size(){
+    return int(data.size());
+}
+
+
+
+
+
+
+
+template<>
+class simple_set<bool>{
+private:
+    bool has_true = false;
+    bool has_false = false;
+public:
+    simple_set(){};
+    void insert(bool value);
+    void erase(bool value);
+    bool find(bool value);
+    int size();
+    
+    
+};
+
+/*
+ Function inserts bool value by determining whether we already store that
+ variable and turning the has_bool value to true to store it.
+ 
+ @param value: bool value to store
+ */
+void simple_set<bool>::insert(bool value){
+    
+    //finds whether we have stored value as has_true or has_false
+    if (!find(value)){
+        if (value){
+            has_true = true;
+        }
+        else{
+            has_false = true;
+        }
+    }
+}
+/*
+ Function decides whether we stored the param
+ @param value: bool value that we determine if we stored or not
+ @return: bool to indicate whether we store the value or not
+ */
+bool simple_set<bool>::find(bool value){
+
+    //if value is true, returns whether we have true stored
+    if (value){
+        return has_true;
+    }
+    //if value is false, returns whether we have false stored
+    else{
+        return has_false;
+    }
+    
+    
+}
+
+/*
+ This function assumes we have value stored, and erase the specified
+ bool value by turning the has_bool variable to false
+ 
+ @param value: value we are trying to erase
+ 
+ */
+void simple_set<bool>::erase(bool value){
+    
+    //make has_bool variables false depending on the value
+    if (value){
+        has_true = false;
+    }
+    else{
+        has_false = false;
+    }
+}
+
+/*
+ This function returns the size of the set, if both true/false
+ are stored, return true, if only one is stored, return 1, and
+ 0 if none is stored
+ 
+ @return: size of the set
+ */
+int simple_set<bool>::size(){
+    int size = 0;
+    
+    //Increment one by one, by checking if we stored the bools
+    if (has_true){
+        size++;
+    }
+    if (has_false){
+        size++;
+    }
+    return size;
+}
+
+
+
+
+
+
+template <typename T>
+class simple_set<T *>{
+private:
+    std::vector<T*> data;
+public:
+    
+    simple_set(){};
+    /*
+    Description of function
+    Insert pointer value to vector data
+    @tparam T *value: value to be inserted
+    */
+    void insert(T *value){
+        if (!find(*value)){
+        //append pointer object to the data if the data that the
+        //pointer is pointing to is not found
+        data.push_back(value);
+        }
+    }
+    
+    /*
+    Description of function
+    Finds whether we stored the pointer that points to value or not
+    @tparam T value: value to be found in the data vector
+    return: bool whether we have stored the variable or not
+    */
+    bool find(T value){
+
+        bool truth = false;
+        //Finds whether we have a pointer that is pointing to
+        //the T value
+        for (auto & d : data){
+            if(*d == value)
+            truth = true;
+        }
+        return truth;
+    }
+    
+    /*
+     Description of function
+     Erases the specified value from the set
+     tparam T value: value to be erased
+     */
+    void erase(T value){
+        //Index is always >=0
+        int idx = -1;
+        
+        //Find vector entry that is pointing to T value,
+        //and erase that entry if found
+        for (int i=0; i<data.size(); ++i)
+            {
+            if (*data[i] == value){
+                idx = i;
+            }
+        }
+        
+        //index will be >=0 if found from vector
+        if (idx!= -1){
+        data.erase(data.begin()+ idx);
+        }
+    }
+
+    /*
+     Description of function
+     Returns the size of the data vector
+     */
+    int size(){
+        return int(data.size());
+    }
+    
+};
+
+
+
+}
+
+
+#endif /* SimpleSet_h */
